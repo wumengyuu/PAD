@@ -10,3 +10,4 @@ df = pd.read_csv('forestfires.csv')
 
 df.info()
 df.describe()
+
