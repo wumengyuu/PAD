@@ -131,7 +131,7 @@ def dist(x, remains, ranges, p):
 ##### ****** Main body for the Iterative Anomalous Cluster Algorithm  *****
 #### You should test and Validate it with the Market Towns Data set following the report
 # Main execution adapted for Iris dataset
-# ---------------------------
+# --------------------------
 from sklearn.datasets import load_iris
 # Load iris dataset
 iris = load_iris()
