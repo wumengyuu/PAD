@@ -129,107 +129,86 @@ def dist(x, remains, ranges, p):
 
 
 ##### ****** Main body for the Iterative Anomalous Cluster Algorithm  *****
-#### You should test and Validate it with the Market Towns Data set following the report 
+#### You should test and Validate it with the Market Towns Data set following the report
+# Main execution adapted for Iris dataset
+# --------------------------
+from sklearn.datasets import load_iris
+# Load iris dataset
+iris = load_iris()
+x = iris.data.astype(np.float32)
+# df = pd.DataFrame(x, columns=iris.feature_names)
 
-# normalization FLAG
-normalization = 0
-# threshold value of the cardinality of clusters (this is an example): 
-threshold = 25
+nn = x.shape[0]  # number of data points
+mm = x.shape[1]  # number of features
 
-### I consider this from the PCA transformation
-### Must be explored and adapted concerning the best normalization for specific data set
-data_ap = zscor_data_pca.iloc[:,:-1]     # from pandas dataframe
-x = data_ap.values.astype(np.float32)
-#y = data.target
-
-#number of data points
-nn = x.shape[0]
-#number of features
-mm = x.shape[1]
-
-# grand means
-me = []
-# maximum value
-mmax = []
-# minimum value
-mmin = []
-# ranges
+# Calculate global statistics
+me = [np.mean(x[:, j]) for j in range(mm)]
+mmax = [np.max(x[:, j]) for j in range(mm)]
+mmin = [np.min(x[:, j]) for j in range(mm)]
 ranges = []
-# "anomalous cluster" ancl is the data structure to keep everything together
-ancl = []
-
-
-for j in range(mm): # for each feature
-    z = x[:, j]     # data column vector j-th feature
-    me.append(np.mean(z))
-    mmax.append(np.max(z))
-    mmin.append(np.min(z))
+normalization = 0  # set to 1 to ignore feature ranges, 0 otherwise
+for j in range(mm):
     if normalization:
-        ranges.append(1);
+        ranges.append(1)
     else:
-        ranges.append(mmax[j] - mmin[j])
-    if ranges[j] == 0:
-        print("Variable num {} is constant!".format(j))
-        ranges[j] = 1
+        rng = mmax[j] - mmin[j]
+        if rng == 0:
+            print("Variable num {} is constant!".format(j))
+            rng = 1
+        ranges.append(rng)
 
-sy = np.divide((x - me), ranges)
-sY = np.array(sy)
-d = np.sum(sY * sY)   # total data scatter of normalized data
+# Compute total data scatter on normalized data
+sY = (x - me) / ranges
+d = np.sum(sY ** 2)
 
+# Iterative Anomalous Cluster Algorithm
+remains = list(range(nn))  # indices of remaining points
+threshold = 25  # minimum cluster size
+numberC = 0  # counter of anomalous clusters
 
-# x, me range, d
-remains = list(range(nn))  # current index set of residual data after some anomalous clusters are extracted
-numberC = 0; # counter of anomalous clusters 
-while(len(remains) != 0):
-    distance = dist(x, remains, ranges, me) # finding normalised distance vector from remains data points to reference 'me'
+# Instead of a single array, store clusters as a list of dictionaries:
+ancl = []  # each element: {'cluster': list, 'centroid': list, 'dD': float}
+
+while len(remains) > 0:
+    distance = dist(x, remains, ranges, me)
+    # find the index of the point with the maximum distance from the overall mean
     ind = np.argmax(distance)
     index = remains[ind]
-    centroid = x[index, :]   # initial anomalous center reference point: the one with higher distance
-    numberC = numberC + 1
-    
-    (cluster, centroid) = anomalousPattern(x, remains, ranges, centroid, me) # finding AP cluster
-    
-    
-    censtand = np.divide((np.asarray(centroid) - me), np.asarray(ranges)) # standardised centroid with parameters of the data   
-    dD = np.sum(np.divide(censtand * censtand.T * len(cluster) * 100, d)) # cluster contribution (per cent) - (lecture on K-means and iK-means)
+    centroid = x[index, :].tolist()  # initial anomalous center
+    numberC += 1
 
-    remains = np.setdiff1d(remains, cluster) 
-    # update the data structure that keeps everything together
-    ancl.append(cluster)   # set of data points in the cluster
-    ancl.append(censtand)  # standardised centroid
-    ancl.append(dD) # proportion of the data scatter
-    
-ancl = np.asarray(ancl)         # convert to an array
-ancl = ancl.reshape((numberC, 3))
-##aK = numberC
-b = 3
-ll = [] # list of clusters
+    # Get anomalous cluster pattern
+    cluster, centroid = anomalousPattern(x, remains, ranges, centroid, me)
 
-for ik in range(numberC):
-    ll.append(len(ancl[ik, 0]))
-    
-rl = [i for i in ll if i >= threshold] # list of clusters with at least threshold elements
-cent = []
-if(len(rl) == 0):
-    print('Too great a threhsold!!!')
+    # If the cluster is empty, remove the farthest point and continue
+    if len(cluster) == 0:
+        remains.remove(index)
+        continue
+
+    # Standardize the centroid
+    censtand = ((np.array(centroid) - np.array(me)) / np.array(ranges)).tolist()
+    # Compute contribution dD; note: using len(cluster) to weight the cluster scatter.
+    dD = np.sum((np.array(censtand) ** 2) * len(cluster) * 100 / d)
+
+    # Remove cluster points from remains
+    remains = list(set(remains) - set(cluster))
+
+    # Store the cluster information
+    ancl.append({
+        'cluster': cluster,
+        'centroid': censtand,
+        'dD': dD
+    })
+
+# Filter clusters by threshold size
+filtered_ancl = [ac for ac in ancl if len(ac['cluster']) >= threshold]
+
+if len(filtered_ancl) == 0:
+    print('Too great a threshold!!!')
 else:
-    num_cents = 0
-    for ik in range(numberC):
-        cluster = ancl[ik,0]
-        if(len(cluster) >= threshold):
-            cent.append(ancl[ik, 1])
-            num_cents += 1
-                
-cent = np.asarray(cent)
-
-### Should be adapted
-
-#cent = cent.reshape((len(cent), len(zscor_data_pca.columns) - 1))
-##print("Initial prototypes: \n", np.round(cent, DECIMAL_PLACES))
-#init_partition = np.zeros((zscor_data_pca.shape[0], len(cent)))
-
-#for index, d in enumerate(zscor_data):
-#    dists = [np.linalg.norm(d - c) for c in cent]
-#    assign = dists.index(np.min(dists))
-#    init_partition[index, assign] = 1
-    
+    # For demonstration, print out the clusters and their standardized centroids
+    for i, ac in enumerate(filtered_ancl):
+        print(f"Cluster {i + 1}:")
+        print("  Size:", len(ac['cluster']))
+        print("  Centroid (standardized):", np.round(ac['centroid'], 3))
+        print("  Cluster contribution (%):", np.round(ac['dD'], 3))
